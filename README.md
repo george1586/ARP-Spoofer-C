@@ -16,3 +16,4 @@
     - Simple UI (consider modified Technitium) so user can control on which devices the rules apply, what modes apply, etc. 
 
 ## II. Diagram in a gif 
+![](https://github.com/ARP-Spoofer-C/ARP-SPOOF-GIF.gif)
