@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include "tests.h"
 
-unsigned char *get_own_mac()
+unsigned char *get_own_mac(void)
 {
     struct ifreq s;
     unsigned char *own_mac = malloc(6);
@@ -32,7 +32,7 @@ unsigned char *get_own_mac()
     return NULL;
 }
 
-unsigned char *get_own_ip()
+unsigned char *get_own_ip(void)
 {
     struct ifreq s;
     unsigned char *own_ip = malloc(4);
@@ -56,11 +56,35 @@ unsigned char *get_own_ip()
     return NULL;
 }
 
-
+unsigned char *get_netmask()
+{
+    struct ifreq s;
+    unsigned char *netmask = malloc(4);
+    if (!netmask)
+        return NULL;
+    int fd = socket(PF_INET, SOCK_DGRAM, AF_UNSPEC);
+    if (fd < 0)
+    {
+        perror("netmask");
+        free(netmask);
+        return NULL;
+    };
+    memset(&s, 0, sizeof(s));
+    strcpy(s.ifr_name, "wlan0");
+    if (0 == ioctl(fd, SIOCGIFNETMASK, &s))
+    {
+        struct sockaddr_in *addr = (struct sockaddr_in *)&s.ifr_netmask;
+        memcpy(netmask, &addr->sin_addr, 4);
+        close(fd);
+        return netmask;
+    }
+    return NULL;
+}
 
 int main()
 {
     unsigned char *own_mac = get_own_mac();
     unsigned char *own_ip = get_own_ip();
+    unsigned char *netmask = get_netmask();
     test_arp();
 }
