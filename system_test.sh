@@ -30,15 +30,16 @@ sudo ./program -t $VICTIM_IP -g $GATEWAY_IP > /tmp/spoofer_log.txt 2>&1 &
 SPOOFER_PID=$!
 
 # Give the C program time to resolve MACs, inject iptables, and start the loop
-sleep 2
+sleep 5
+echo "--- SPOOFER LOG ---"
+cat /tmp/spoofer_log.txt
+echo "-------------------"
 
 # KPI 1: Check Process State
 if ps -p $SPOOFER_PID > /dev/null; then
     echo "[+] KPI PASSED: Spoofer process ($SPOOFER_PID) is actively running."
 else
     echo "[!] KPI FAILED: Spoofer crashed or exited prematurely."
-    echo "--- Spoofer Error Log ---"
-    cat /tmp/spoofer_log.txt
     exit 1
 fi
 
