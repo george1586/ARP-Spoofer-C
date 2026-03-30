@@ -3,5 +3,6 @@
 unsigned char *get_own_ip();
 unsigned char *get_own_mac();
 unsigned char *get_netmask();
+unsigned char *get_default_gateway_ip();
 int enable_ip_forwarding();
 #endif

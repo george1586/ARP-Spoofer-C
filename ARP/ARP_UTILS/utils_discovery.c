@@ -91,3 +91,36 @@ int enable_ip_forwarding() {
     fclose(f);
     return 0;
 }
+
+unsigned char *get_default_gateway_ip(void) {
+    FILE *f = fopen("/proc/net/route", "r");
+    if (!f) return NULL;
+    
+    char line[256];
+    char iface[IFNAMSIZ];
+    unsigned long dest, gw;
+    
+    // Skip the first header line
+    if (!fgets(line, sizeof(line), f)) {
+        fclose(f);
+        return NULL;
+    }
+    
+    while (fgets(line, sizeof(line), f)) {
+        if (sscanf(line, "%s %lx %lx", iface, &dest, &gw) == 3) {
+            if (dest == 0) {
+                unsigned char *gateway_ip = malloc(4);
+                if (gateway_ip) {
+                    // The gateway IP is heavily formatted in little-endian hex in /proc/net/route
+                    // Using %lx reads it into an integer that natively matches the raw 4-byte IP structure
+                    memcpy(gateway_ip, &gw, 4);
+                }
+                fclose(f);
+                return gateway_ip;
+            }
+        }
+    }
+    
+    fclose(f);
+    return NULL;
+}

