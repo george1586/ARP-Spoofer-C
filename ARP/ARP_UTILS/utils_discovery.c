@@ -4,9 +4,9 @@
 #include <netdb.h>
 #include <stdio.h>
 #include <string.h>
+#include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include "tests.h"
 
 unsigned char *get_own_mac(void)
 {
@@ -45,7 +45,7 @@ unsigned char *get_own_ip(void)
         free(own_ip);
         return NULL;
     }
-    strcpy(s.ifr_name, "wlan0"); // change to eth0 for pi
+    strcpy(s.ifr_name, "eth0"); // changed to eth0 for pi
     if (0 == ioctl(fd, SIOCGIFADDR, &s))
     {
         struct sockaddr_in *addr = (struct sockaddr_in *)&s.ifr_addr;
@@ -70,7 +70,7 @@ unsigned char *get_netmask()
         return NULL;
     };
     memset(&s, 0, sizeof(s));
-    strcpy(s.ifr_name, "wlan0");
+    strcpy(s.ifr_name, "eth0");
     if (0 == ioctl(fd, SIOCGIFNETMASK, &s))
     {
         struct sockaddr_in *addr = (struct sockaddr_in *)&s.ifr_netmask;
@@ -81,10 +81,13 @@ unsigned char *get_netmask()
     return NULL;
 }
 
-int main()
-{
-    unsigned char *own_mac = get_own_mac();
-    unsigned char *own_ip = get_own_ip();
-    unsigned char *netmask = get_netmask();
-    test_arp();
+int enable_ip_forwarding() {
+    FILE *f = fopen("/proc/sys/net/ipv4/ip_forward", "w");
+    if (f == NULL) {
+        perror("Failed to open /proc/sys/net/ipv4/ip_forward");
+        return -1;
+    }
+    fprintf(f, "1");
+    fclose(f);
+    return 0;
 }
