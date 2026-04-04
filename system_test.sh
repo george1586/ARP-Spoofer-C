@@ -96,6 +96,20 @@ else
     echo "[!] KPI FAILED: No arptables DROP rules found!"
 fi
 
+# KPI 10: Check DoT (Port 853) Blocking
+if sudo iptables -L FORWARD -n 2>/dev/null | grep -q "REJECT.*dpt:853"; then
+    echo "[+] KPI PASSED: DNS over TLS (Port 853) is being blocked."
+else
+    echo "[!] KPI FAILED: DNS over TLS (Port 853) block rule not found!"
+fi
+
+# KPI 11: Check DoH (Google/Cloudflare) Blackholing
+if sudo iptables -L FORWARD -n 2>/dev/null | grep -q "REJECT.*8.8.8.8"; then
+    echo "[+] KPI PASSED: Common DNS provider DoH endpoints are being blackholed."
+else
+    echo "[!] KPI FAILED: DoH blackhole rules not found for common providers!"
+fi
+
 echo "[*] Transmitting SIGINT (Graceful Shutdown) to the engine..."
 sudo kill -SIGINT $SPOOFER_PID
 

