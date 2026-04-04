@@ -8,10 +8,11 @@ SRC = \
 	ARP/ARP_UTILS/arp_scan.c \
 	ARP/ARP_UTILS/arp_poison.c \
 	ARP/ARP_UTILS/ndp_block.c \
-	ARP/ARP_UTILS/utils_iptables.c
+	ARP/ARP_UTILS/utils_iptables.c \
+	ARP/ARP_UTILS/utils_rate.c
 
 program: $(SRC)
-	$(CC) $(CFLAGS) $(INCLUDES) $(SRC) -o program
+	$(CC) $(CFLAGS) $(INCLUDES) $(SRC) -lpthread -o program
 
 clean:
 	rm -f program
