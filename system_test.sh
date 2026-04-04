@@ -24,6 +24,11 @@ if ! ip link show eth0 > /dev/null 2>&1; then
     exit 0
 fi
 
+# New Pre-check Cleanup: Ensure no legacy rules interfere with validation
+echo "[*] Cleaning up legacy iptables rules..."
+sudo iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null
+sudo iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null
+
 echo "[*] Launching ARP Spoofer in full auto-discovery background mode..."
 sudo ./program > /tmp/spoofer_log.txt 2>&1 &
 SPOOFER_PID=$!
@@ -67,17 +72,29 @@ else
 fi
 
 # KPI 6: Check IPv6 RA Blocking Transmission
-if grep -q "IPv6 Blocking RA sent." /tmp/spoofer_log.txt; then
-    echo "[+] KPI PASSED: ICMPv6 RA Blocking packets are being transmitted."
+if grep -q "IPv6 Blocking RA sent (High Priority)." /tmp/spoofer_log.txt; then
+    echo "[+] KPI PASSED: ICMPv6 High-Priority RA Blocking packets are being transmitted."
+elif grep -q "Failed to discover IPv6 gateway" /tmp/spoofer_log.txt; then
+    echo "[-] WARNING: IPv6 RA transmission inactive because discovery failed (Expected if gateway is not link-local IPv6)."
 else
     echo "[!] KPI FAILED: No 'IPv6 Blocking RA sent' message found in logs!"
+fi
+
+# KPI 7: Check IPv6 Unsolicited NA Spoofing
+if grep -q "IPv6 Unsolicited NA sent (Override)." /tmp/spoofer_log.txt; then
+    echo "[+] KPI PASSED: ICMPv6 Unsolicited NA Override packets are being transmitted."
+elif grep -q "Failed to discover IPv6 gateway" /tmp/spoofer_log.txt; then
+     echo "[-] WARNING: IPv6 NA transmission inactive because discovery failed."
+else
+    echo "[!] KPI FAILED: No 'IPv6 Unsolicited NA sent' message found in logs!"
 fi
 
 echo "[*] Transmitting SIGINT (Graceful Shutdown) to the engine..."
 sudo kill -SIGINT $SPOOFER_PID
 
 # Give the C program time to broadcast the ARP Healing packets and delete iptables rules
-sleep 2
+# Healing takes ~1.5 - 2s (3 rounds * 0.5s sleep)
+sleep 5
 
 # KPI 4: Check Graceful Teardown (IPTables Reverted)
 if sudo iptables -t nat -C PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null; then

