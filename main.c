@@ -34,6 +34,12 @@ void print_hex_mac(unsigned char *mac) {
     printf("%02x%c", mac[i], i == 5 ? '\n' : ':');
 }
 int main(int argc, char *argv[]) {
+  // Unbuffer stdout immediately to ensure logs are captured in redirected environments
+  setvbuf(stdout, NULL, _IONBF, 0);
+
+  // Register Signal handler early for graceful shutdown even during discovery
+  signal(SIGINT, handle_sigint);
+
   char *victim_ip_str = NULL;
   char *gateway_ip_str = NULL;
   int opt;
@@ -139,8 +145,6 @@ int main(int argc, char *argv[]) {
   enable_ip_forwarding();
   printf("[*] Integrating with Technitium DNS...\n");
   setup_dns_redirect();
-  // Register Signal handler for graceful shutdown
-  signal(SIGINT, handle_sigint);
   // Launch Loop
   printf("\n[*] >>> ATTACK ENGAGED : ARP poisoning Engine active! <<<\n");
   printf("[*] (Press Ctrl+C to cleanly heal the network and exit)\n\n");

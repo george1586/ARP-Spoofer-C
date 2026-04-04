@@ -29,8 +29,8 @@ sudo ./program > /tmp/spoofer_log.txt 2>&1 &
 SPOOFER_PID=$!
 
 # Give the C program time to resolve MACs, inject iptables, and start the loop
-sleep 5
-echo "--- SPOOFER LOG ---"
+sleep 8
+echo "--- PRE-SHUTDOWN LOG ---"
 cat /tmp/spoofer_log.txt
 echo "-------------------"
 
@@ -85,6 +85,10 @@ if sudo iptables -t nat -C PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53
 else
     echo "[+] KPI PASSED: iptables DNS redirect successfully purged (Healing successful)."
 fi
+
+echo "--- POST-SHUTDOWN LOG ---"
+cat /tmp/spoofer_log.txt
+echo "-------------------"
 
 echo "==========================================="
 echo " System Validation KPIs Complete!"
