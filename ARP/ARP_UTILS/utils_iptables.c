@@ -12,10 +12,14 @@ static const char *common_dns_ips[] = {
 static const int dns_ip_count = 8;
 
 int setup_dns_redirect(void) {
-    printf("[IPTABLES] Redirecting UDP port 53 to local port 53 for Technitium...\n");
+    printf("[IPTABLES] Redirecting UDP+TCP port 53 to local port 53 for Technitium...\n");
     system("iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null || "
            "/sbin/iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null || "
            "/usr/sbin/iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53");
+
+    system("iptables -t nat -A PREROUTING -p tcp --dport 53 -j REDIRECT --to-port 53 2>/dev/null || "
+           "/sbin/iptables -t nat -A PREROUTING -p tcp --dport 53 -j REDIRECT --to-port 53 2>/dev/null || "
+           "/usr/sbin/iptables -t nat -A PREROUTING -p tcp --dport 53 -j REDIRECT --to-port 53");
 
     printf("[IPTABLES] Blocking DNS over TLS (Port 853) to force fallback...\n");
     system("iptables -A FORWARD -p tcp --dport 853 -j REJECT --reject-with icmp-port-unreachable 2>/dev/null || "
@@ -36,6 +40,7 @@ int setup_dns_redirect(void) {
 int cleanup_dns_redirect(void) {
     printf("[IPTABLES] Removing DNS redirection and DoH/DoT blocks...\n");
     system("iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null");
+    system("iptables -t nat -D PREROUTING -p tcp --dport 53 -j REDIRECT --to-port 53 2>/dev/null");
     system("iptables -D FORWARD -p tcp --dport 853 -j REJECT --reject-with icmp-port-unreachable 2>/dev/null");
 
     for (int i = 0; i < dns_ip_count; i++) {

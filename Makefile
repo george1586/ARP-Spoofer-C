@@ -10,7 +10,8 @@ SRC = \
 	ARP/ARP_UTILS/ndp_block.c \
 	ARP/ARP_UTILS/utils_iptables.c \
 	ARP/ARP_UTILS/utils_rate.c \
-	ARP/ARP_UTILS/utils_firewall.c
+	ARP/ARP_UTILS/utils_firewall.c \
+	ARP/ARP_UTILS/utils_log.c
 
 program: $(SRC)
 	$(CC) $(CFLAGS) $(INCLUDES) $(SRC) -lpthread -o program

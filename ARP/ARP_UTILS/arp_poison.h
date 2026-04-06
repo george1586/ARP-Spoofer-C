@@ -5,6 +5,7 @@
 #include "arp_scan.h"
 
 int send_arp_reply(int sockfd, unsigned char *target_mac, unsigned char *target_ip, unsigned char *spoofed_mac, unsigned char *spoofed_ip);
+int send_arp_request(int sockfd, unsigned char *target_mac, unsigned char *target_ip, unsigned char *sender_mac, unsigned char *sender_ip);
 void start_poisoning(struct Victim *victims, int victim_count, unsigned char *gateway_ip, unsigned char *gateway_mac, unsigned char *gateway_ipv6_ll);
 void start_wide_poisoning(unsigned char *gateway_ip, unsigned char *gateway_mac, unsigned char *gateway_ipv6_ll);
 void start_smart_poisoning(unsigned char *gateway_ip, unsigned char *gateway_mac, unsigned char *gateway_ipv6_ll);

@@ -30,6 +30,8 @@ unsigned char *get_own_mac(void) {
     return own_mac;
   }
 
+  close(fd);
+  free(own_mac);
   return NULL;
 }
 
@@ -51,6 +53,8 @@ unsigned char *get_own_ip(void) {
     close(fd);
     return own_ip;
   }
+  close(fd);
+  free(own_ip);
   return NULL;
 }
 
@@ -73,6 +77,8 @@ unsigned char *get_netmask() {
     close(fd);
     return netmask;
   }
+  close(fd);
+  free(netmask);
   return NULL;
 }
 

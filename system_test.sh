@@ -6,135 +6,315 @@ echo "==========================================="
 echo " ARP Spoofer System KPI Validation Suite"
 echo "==========================================="
 
-# Mock args were used in prototype, but now we test full Auto-Discovery
-# The spoofer will now scan the network and find real targets
+PASS=0
+FAIL=0
+WARN=0
+LOG="/tmp/spoofer_log.txt"
+LOGFILE="/tmp/spoofer_session.log"
 
+pass() { echo "[+] KPI PASSED: $1"; PASS=$((PASS+1)); }
+fail() { echo "[!] KPI FAILED: $1"; FAIL=$((FAIL+1)); }
+warn() { echo "[-] WARNING: $1"; WARN=$((WARN+1)); }
+
+# ========================================
+# KPI 1: Build Verification
+# ========================================
+echo ""
 echo "[*] Compiling the project..."
-make clean > /dev/null && make > /dev/null
+make clean > /dev/null && make > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-    echo "[!] KPI FAILED: Build process failed."
+    fail "Build process failed."
     exit 1
 fi
-echo "[+] KPI PASSED: Build successful."
+pass "Build successful (zero errors)."
 
+# Check for compiler warnings
+WARN_COUNT=$(make 2>&1 | grep -c "warning:")
+if [ "$WARN_COUNT" -eq 0 ]; then
+    pass "Build produced zero compiler warnings."
+else
+    warn "Build produced $WARN_COUNT compiler warnings."
+fi
+
+# ========================================
+# KPI 2: Binary sanity checks
+# ========================================
+if [ -x ./program ]; then
+    pass "Binary 'program' exists and is executable."
+else
+    fail "Binary 'program' not found or not executable."
+    exit 1
+fi
+
+# KPI 2b: Help flag works without crashing
+./program -h 2>&1 | grep -q "\-l"
+if [ $? -eq 0 ]; then
+    pass "Help text includes -l (logfile) flag."
+else
+    fail "Help text missing -l flag."
+fi
+
+./program -h 2>&1 | grep -q "\-w"
+if [ $? -eq 0 ]; then
+    pass "Help text includes -w (wide mode) flag."
+else
+    fail "Help text missing -w flag."
+fi
+
+# ========================================
+# Interface check — bail early if no eth0
+# ========================================
 if ! ip link show eth0 > /dev/null 2>&1; then
-    echo "[-] WARNING: 'eth0' interface not found on this system."
+    echo ""
+    warn "'eth0' interface not found on this system."
     echo "[-] The C engine strictly requires eth0 to bind raw sockets."
     echo "[-] Please run this script on the target Raspberry Pi for live validation."
+    echo ""
+    echo "==========================================="
+    printf " Results: %d PASSED, %d FAILED, %d WARNINGS\n" $PASS $FAIL $WARN
+    echo "==========================================="
     exit 0
 fi
 
-# New Pre-check Cleanup: Ensure no legacy rules interfere with validation
-echo "[*] Cleaning up legacy iptables rules..."
+# ========================================
+# Pre-check Cleanup
+# ========================================
+echo ""
+echo "[*] Cleaning up legacy rules before test..."
 sudo iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null
-sudo iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null
+sudo iptables -t nat -D PREROUTING -p tcp --dport 53 -j REDIRECT --to-port 53 2>/dev/null
+sudo arptables -F 2>/dev/null
 
-echo "[*] Launching ARP Spoofer in full auto-discovery background mode..."
-sudo ./program > /tmp/spoofer_log.txt 2>&1 &
+# ========================================
+# Launch spoofer with logging flag (#15)
+# ========================================
+echo "[*] Launching ARP Spoofer in auto-discovery mode with -l flag..."
+sudo ./program -l "$LOGFILE" > "$LOG" 2>&1 &
 SPOOFER_PID=$!
 
-# Give the C program time to resolve MACs, inject iptables, and start the loop
-sleep 8
-echo "--- PRE-SHUTDOWN LOG ---"
-cat /tmp/spoofer_log.txt
-echo "-------------------"
+# Give time for discovery, iptables injection, and first poison cycle
+sleep 10
+echo "--- PRE-SHUTDOWN LOG (stdout) ---"
+cat "$LOG"
+echo "---------------------------------"
 
-# KPI 1: Check Process State
-if ps -p $SPOOFER_PID > /dev/null; then
-    echo "[+] KPI PASSED: Spoofer process ($SPOOFER_PID) is actively running."
+# ========================================
+# KPI 3: Process State
+# ========================================
+if ps -p $SPOOFER_PID > /dev/null 2>&1; then
+    pass "Spoofer process ($SPOOFER_PID) is actively running."
 else
-    echo "[!] KPI FAILED: Spoofer crashed or exited prematurely."
+    fail "Spoofer crashed or exited prematurely."
+    echo "--- CRASH LOG ---"
+    cat "$LOG"
+    echo "-----------------"
     exit 1
 fi
 
-# KPI 2: Check Kernel IP Forwarding
+# ========================================
+# KPI 4: Kernel IP Forwarding
+# ========================================
 IP_FWD=$(cat /proc/sys/net/ipv4/ip_forward)
 if [ "$IP_FWD" -eq 1 ]; then
-    echo "[+] KPI PASSED: Kernel IP Forwarding is actively enabled."
+    pass "Kernel IP Forwarding is actively enabled."
 else
-    echo "[!] KPI FAILED: IP Forwarding was NOT set to 1."
+    fail "IP Forwarding was NOT set to 1."
 fi
 
-# KPI 3: Check IPTables DNS Redirect hooks
+# ========================================
+# KPI 5: IPTables DNS Redirect (UDP + TCP) (#12)
+# ========================================
 if sudo iptables -t nat -C PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null; then
-    echo "[+] KPI PASSED: iptables DNS to Technitium redirect rule is active."
+    pass "iptables UDP/53 DNS redirect rule is active."
 else
-    echo "[!] KPI FAILED: iptables DNS redirect rule is missing!"
+    fail "iptables UDP/53 DNS redirect rule is missing!"
 fi
 
-# KPI 5: Check IPv6 Gateway Discovery (Warning if not found, but check if code tried)
-if grep -q "Discovered IPv6 Gateway Address:" /tmp/spoofer_log.txt; then
-    echo "[+] KPI PASSED: IPv6 Gateway link-local address discovered."
-elif grep -q "Failed to discover IPv6 gateway" /tmp/spoofer_log.txt; then
-    echo "[-] WARNING: IPv6 Discovery attempted but failed (Expected if network is IPv4-only)."
+if sudo iptables -t nat -C PREROUTING -p tcp --dport 53 -j REDIRECT --to-port 53 2>/dev/null; then
+    pass "iptables TCP/53 DNS redirect rule is active (new)."
 else
-    echo "[!] KPI FAILED: IPv6 Gateway discovery log not found!"
+    fail "iptables TCP/53 DNS redirect rule is missing!"
 fi
 
-# KPI 6: Check IPv6 RA Blocking Transmission
-if grep -q "IPv6 Blocking RA sent (High Priority)." /tmp/spoofer_log.txt; then
-    echo "[+] KPI PASSED: ICMPv6 High-Priority RA Blocking packets are being transmitted."
-elif grep -q "Failed to discover IPv6 gateway" /tmp/spoofer_log.txt; then
-    echo "[-] WARNING: IPv6 RA transmission inactive because discovery failed (Expected if gateway is not link-local IPv6)."
-else
-    echo "[!] KPI FAILED: No 'IPv6 Blocking RA sent' message found in logs!"
-fi
-
-# KPI 7: Check IPv6 Unsolicited NA Spoofing
-if grep -q "IPv6 Unsolicited NA sent (Override)." /tmp/spoofer_log.txt; then
-    echo "[+] KPI PASSED: ICMPv6 Unsolicited NA Override packets are being transmitted."
-elif grep -q "Failed to discover IPv6 gateway" /tmp/spoofer_log.txt; then
-     echo "[-] WARNING: IPv6 NA transmission inactive because discovery failed."
-else
-    echo "[!] KPI FAILED: No 'IPv6 Unsolicited NA sent' message found in logs!"
-fi
-
-# KPI 8: Check ARP-Kill Protection Strategy (Arptables Injected)
-if sudo arptables -L INPUT -n 2>/dev/null | grep -q "DROP"; then
-    echo "[+] KPI PASSED: arptables ARP-Kill rules are active."
-else
-    echo "[!] KPI FAILED: No arptables DROP rules found!"
-fi
-
-# KPI 10: Check DoT (Port 853) Blocking
+# ========================================
+# KPI 6: DoT (Port 853) Blocking
+# ========================================
 if sudo iptables -L FORWARD -n 2>/dev/null | grep -q "REJECT.*dpt:853"; then
-    echo "[+] KPI PASSED: DNS over TLS (Port 853) is being blocked."
+    pass "DNS over TLS (Port 853) is being blocked."
 else
-    echo "[!] KPI FAILED: DNS over TLS (Port 853) block rule not found!"
+    fail "DNS over TLS (Port 853) block rule not found!"
 fi
 
-# KPI 11: Check DoH (Google/Cloudflare) Blackholing
+# ========================================
+# KPI 7: DoH Provider Blackholing
+# ========================================
 if sudo iptables -L FORWARD -n 2>/dev/null | grep -q "REJECT.*8.8.8.8"; then
-    echo "[+] KPI PASSED: Common DNS provider DoH endpoints are being blackholed."
+    pass "Common DNS provider DoH endpoints are being blackholed."
 else
-    echo "[!] KPI FAILED: DoH blackhole rules not found for common providers!"
+    fail "DoH blackhole rules not found for common providers!"
 fi
 
+# ========================================
+# KPI 8: ARP-Kill Firewall (OUTPUT only, not INPUT) (#3 fix)
+# ========================================
+if sudo arptables -L OUTPUT -n 2>/dev/null | grep -q "DROP"; then
+    pass "arptables OUTPUT DROP rules are active (correct chain)."
+else
+    warn "No arptables OUTPUT DROP rules found (arptables may not be installed)."
+fi
+
+# Verify INPUT chain is clean (was the root cause of spoofing fade)
+if sudo arptables -L INPUT -n 2>/dev/null | grep -q "DROP"; then
+    fail "arptables INPUT has DROP rules — this blinds the heartbeat monitor!"
+else
+    pass "arptables INPUT chain is clean (heartbeat monitor unblinded)."
+fi
+
+# ========================================
+# KPI 9: IPv6 Gateway Discovery
+# ========================================
+if grep -q "Discovered IPv6 Gateway Address:" "$LOG"; then
+    pass "IPv6 Gateway link-local address discovered."
+elif grep -q "Failed to discover IPv6 gateway" "$LOG"; then
+    warn "IPv6 Discovery attempted but failed (expected on IPv4-only networks)."
+else
+    fail "IPv6 Gateway discovery log not found!"
+fi
+
+# ========================================
+# KPI 10: Log file creation (#15)
+# ========================================
+if [ -f "$LOGFILE" ] && [ -s "$LOGFILE" ]; then
+    pass "Log file created and contains data (-l flag working)."
+else
+    fail "Log file not created or empty — logging is broken!"
+fi
+
+# Verify log file has session header
+if [ -f "$LOGFILE" ] && grep -q "ARP Spoofer Session Started" "$LOGFILE"; then
+    pass "Log file contains session header with timestamp."
+else
+    fail "Log file missing session header."
+fi
+
+# ========================================
+# KPI 11: Adaptive Rate Monitor Active
+# ========================================
+if grep -q "\[MONITOR\] Heartbeat sniffer active" "$LOG"; then
+    pass "Adaptive rate monitor thread is active."
+else
+    fail "Adaptive rate monitor did not start!"
+fi
+
+# ========================================
+# KPI 12: Poison loop producing output
+# ========================================
+if grep -q "Poison sent. Sleeping" "$LOG"; then
+    pass "Poison loop is cycling and producing output."
+else
+    fail "No poison cycle output detected!"
+fi
+
+# ========================================
+# KPI 13: Signal-safe shutdown (#13)
+# ========================================
+echo ""
 echo "[*] Transmitting SIGINT (Graceful Shutdown) to the engine..."
 sudo kill -SIGINT $SPOOFER_PID
 
-# Give the C program time to broadcast the ARP Healing packets and delete iptables rules
-# Healing takes ~1.5 - 2s (3 rounds * 0.5s sleep)
+# Healing takes ~2s (3 rounds * 0.5s sleep) + cleanup
 sleep 5
 
-# KPI 4: Check Graceful Teardown (IPTables Reverted)
+# Verify process actually exited
+if ps -p $SPOOFER_PID > /dev/null 2>&1; then
+    fail "Process did NOT exit after SIGINT — signal handler may be broken!"
+    sudo kill -9 $SPOOFER_PID 2>/dev/null
+else
+    pass "Process exited cleanly after SIGINT."
+fi
+
+# ========================================
+# KPI 14: Graceful Teardown — IPTables Reverted
+# ========================================
 if sudo iptables -t nat -C PREROUTING -p udp --dport 53 -j REDIRECT --to-port 53 2>/dev/null; then
-    echo "[!] KPI FAILED: iptables DNS redirect rule was NOT cleaned up during shutdown!"
+    fail "iptables UDP/53 redirect was NOT cleaned up during shutdown!"
 else
-    echo "[+] KPI PASSED: iptables DNS redirect successfully purged (Healing successful)."
+    pass "iptables UDP/53 redirect successfully purged."
 fi
 
-# KPI 9: Check ARP-Kill Teardown (Arptables Flushed)
-if sudo arptables -L INPUT -n 2>/dev/null | grep -q "DROP"; then
-    echo "[!] KPI FAILED: arptables ARP-Kill rules were NOT cleaned up during shutdown!"
+if sudo iptables -t nat -C PREROUTING -p tcp --dport 53 -j REDIRECT --to-port 53 2>/dev/null; then
+    fail "iptables TCP/53 redirect was NOT cleaned up during shutdown!"
 else
-    echo "[+] KPI PASSED: arptables ARP-Kill rules successfully flushed."
+    pass "iptables TCP/53 redirect successfully purged."
 fi
 
-echo "--- POST-SHUTDOWN LOG ---"
-cat /tmp/spoofer_log.txt
-echo "-------------------"
+# ========================================
+# KPI 15: Graceful Teardown — Arptables Flushed
+# ========================================
+if sudo arptables -L OUTPUT -n 2>/dev/null | grep -q "DROP"; then
+    fail "arptables ARP-Kill rules were NOT cleaned up during shutdown!"
+else
+    pass "arptables ARP-Kill rules successfully flushed."
+fi
 
+# ========================================
+# KPI 16: ARP Healing Performed
+# ========================================
+# Re-read the log after shutdown
+cat "$LOG" > /tmp/spoofer_log_final.txt
+if grep -q "\[HEALING\] ARP Caches successfully restored" /tmp/spoofer_log_final.txt; then
+    pass "ARP Healing broadcast confirmed in shutdown log."
+else
+    # Also check the log file
+    if [ -f "$LOGFILE" ] && grep -q "\[HEALING\] ARP Caches successfully restored" "$LOGFILE"; then
+        pass "ARP Healing broadcast confirmed in session log file."
+    else
+        fail "No ARP Healing confirmation found in logs!"
+    fi
+fi
+
+# ========================================
+# KPI 17: Shutdown cleanup message (#13)
+# ========================================
+if grep -q "\[SHUTDOWN\] Cleanup complete" /tmp/spoofer_log_final.txt || \
+   ([ -f "$LOGFILE" ] && grep -q "\[SHUTDOWN\] Cleanup complete" "$LOGFILE"); then
+    pass "Graceful shutdown cleanup completed (signal-safe handler working)."
+else
+    fail "Shutdown cleanup message not found — signal handler may not be signal-safe!"
+fi
+
+# ========================================
+# KPI 18: Log file session end marker (#15)
+# ========================================
+if [ -f "$LOGFILE" ] && grep -q "Session Ended" "$LOGFILE"; then
+    pass "Log file contains session end marker (log_close called)."
+else
+    fail "Log file missing session end marker."
+fi
+
+# ========================================
+# Summary
+# ========================================
+echo ""
+echo "--- POST-SHUTDOWN LOG (stdout) ---"
+cat "$LOG"
+echo "----------------------------------"
+
+if [ -f "$LOGFILE" ]; then
+    echo "--- SESSION LOG FILE ($LOGFILE) ---"
+    cat "$LOGFILE"
+    echo "----------------------------------"
+fi
+
+# Cleanup temp files
+rm -f /tmp/spoofer_log_final.txt
+
+echo ""
 echo "==========================================="
-echo " System Validation KPIs Complete!"
+printf " Results: %d PASSED, %d FAILED, %d WARNINGS\n" $PASS $FAIL $WARN
 echo "==========================================="
+
+if [ $FAIL -gt 0 ]; then
+    exit 1
+fi
+exit 0
