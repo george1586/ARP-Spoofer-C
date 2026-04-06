@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra -O2 -g
 INCLUDES = -I ARP/ARP_UTILS
 
 SRC = \

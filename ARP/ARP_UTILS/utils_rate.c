@@ -1,6 +1,7 @@
 #include "utils_rate.h"
 #include "utils_log.h"
 #include <linux/if_ether.h>
+#include <linux/filter.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
@@ -33,10 +34,10 @@ static pthread_mutex_t g_rate_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct timeval g_last_heartbeat_time;
 static pthread_mutex_t g_heartbeat_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-#define ADAPTIVE_MIN 0.3f
-#define ADAPTIVE_MAX 2.0f
-#define ADAPTIVE_BASELINE 1.0f
-#define DECAY_CHECK_INTERVAL 5
+#define ADAPTIVE_MIN 0.05f
+#define ADAPTIVE_MAX 1.0f
+#define ADAPTIVE_BASELINE 0.5f
+#define DECAY_CHECK_INTERVAL 3
 #define SPOOF_DETECT_COOLDOWN 5  // seconds between spoof failure alerts (#10)
 #define SPOOF_DETECT_GRACE 10   // seconds after startup before detecting failures
 
@@ -88,10 +89,26 @@ void *monitor_router_heartbeat(void *arg) {
         return NULL;
     }
 
+    // BPF: only pass ARP (0x0806), IPv4 (0x0800), IPv6 (0x86DD)
+    // This prevents waking on every outbound packet we generate
+    struct sock_filter bpf_code[] = {
+        { BPF_LD  | BPF_H   | BPF_ABS, 0, 0, 12 },           // load ethertype
+        { BPF_JMP | BPF_JEQ | BPF_K,   3, 0, ETH_P_ARP },    // ARP? -> accept
+        { BPF_JMP | BPF_JEQ | BPF_K,   2, 0, ETH_P_IP },     // IPv4? -> accept
+        { BPF_JMP | BPF_JEQ | BPF_K,   1, 0, ETH_P_IPV6 },   // IPv6? -> accept
+        { BPF_RET | BPF_K,             0, 0, 0 },             // reject
+        { BPF_RET | BPF_K,             0, 0, 0x0000FFFF },    // accept (max len)
+    };
+    struct sock_fprog bpf_prog = {
+        .len = sizeof(bpf_code) / sizeof(bpf_code[0]),
+        .filter = bpf_code,
+    };
+    setsockopt(sockfd, SOL_SOCKET, SO_ATTACH_FILTER, &bpf_prog, sizeof(bpf_prog));
+
     struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
     setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    log_printf("[MONITOR] Heartbeat sniffer active. Tuning poisoning rate...\n");
+    log_printf("[MONITOR] Heartbeat sniffer active (BPF-filtered). Tuning poisoning rate...\n");
 
     while (g_keep_running) {
         int bytes_received = recvfrom(sockfd, buffer, 2048, 0, NULL, NULL);

