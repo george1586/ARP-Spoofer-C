@@ -92,11 +92,33 @@ echo "[*] Launching ARP Spoofer in auto-discovery mode with -l flag..."
 sudo ./program -l "$LOGFILE" > "$LOG" 2>&1 &
 SPOOFER_PID=$!
 
-# Give time for discovery, iptables injection, and first poison cycle
-sleep 10
+# Poll for readiness: wait until the attack loop actually starts.
+# Network discovery can take 10-30s depending on subnet size + timeouts.
+echo "[*] Waiting for spoofer to finish discovery and engage attack..."
+READY=0
+for i in $(seq 1 45); do
+    if grep -q "ATTACK ENGAGED" "$LOG" 2>/dev/null; then
+        READY=1
+        echo "[*] Attack engaged after ${i}s. Waiting for first poison cycle..."
+        sleep 3  # Let the first cycle + monitor thread start
+        break
+    fi
+    # Bail if process died during discovery
+    if ! ps -p $SPOOFER_PID > /dev/null 2>&1; then
+        echo "[!] Process died during discovery!"
+        break
+    fi
+    sleep 1
+done
+
+if [ $READY -eq 0 ]; then
+    warn "Spoofer did not reach ATTACK ENGAGED within 45s."
+fi
+
 echo "--- PRE-SHUTDOWN LOG (stdout) ---"
 cat "$LOG"
 echo "---------------------------------"
+
 
 # ========================================
 # KPI 3: Process State
