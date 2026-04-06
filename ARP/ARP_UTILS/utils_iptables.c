@@ -34,6 +34,11 @@ int setup_dns_redirect(void) {
         system(cmd);
     }
 
+    printf("[IPTABLES] Adding MASQUERADE rule to bypass router anti-spoofing (SPI)...\n");
+    system("iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || "
+           "/sbin/iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || "
+           "/usr/sbin/iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null");
+
     return 0;
 }
 
@@ -49,6 +54,8 @@ int cleanup_dns_redirect(void) {
                  common_dns_ips[i]);
         system(cmd);
     }
+
+    system("iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null");
 
     return 0;
 }
